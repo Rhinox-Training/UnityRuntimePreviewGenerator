@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
 
 public static class RuntimePreviewGenerator
@@ -248,9 +249,8 @@ public static class RuntimePreviewGenerator
 
 			renderCamera.aspect = (float) width / height;
 			renderCamera.transform.rotation = Quaternion.LookRotation( previewObject.rotation * m_previewDirection, previewObject.up );
-
+			
 			CalculateCameraPosition( renderCamera, previewBounds, m_padding );
-
 			renderCamera.farClipPlane = ( renderCamera.transform.position - previewBounds.center ).magnitude + previewBounds.size.magnitude;
 
 			RenderTexture activeRT = RenderTexture.active;
@@ -263,11 +263,23 @@ public static class RuntimePreviewGenerator
 					GL.Clear( true, true, m_backgroundColor );
 
 				renderCamera.targetTexture = renderTexture;
+				
 
-				if( !shader )
-					renderCamera.Render();
-				else
-					renderCamera.RenderWithShader( shader, replacementTag ?? string.Empty );
+				if (GraphicsSettings.renderPipelineAsset != null)
+				{
+#if UNITY_URP
+					renderCamera.forceIntoRenderTexture = true;
+					//UnityEngine.Rendering.Universal.UniversalRenderPipeline.RenderSingleCamera(null, renderCamera);
+#endif
+				}
+				//else
+				{
+					if( !shader )
+						renderCamera.Render();
+					else
+						renderCamera.RenderWithShader( shader, replacementTag ?? string.Empty );
+				}
+
 
 				renderCamera.targetTexture = null;
 
@@ -438,7 +450,16 @@ public static class RuntimePreviewGenerator
 			Vector3 closestPoint1, closestPoint2;
 			FindClosestPointsOnTwoLines( horizontalIntersection, verticalIntersection, out closestPoint1, out closestPoint2 );
 
-			cameraTR.position = Vector3.Dot( closestPoint1 - closestPoint2, cameraDirection ) < 0 ? closestPoint1 : closestPoint2;
+			
+			Vector3 furthestPoint = Vector3.Dot( closestPoint1 - closestPoint2, cameraDirection ) < 0 ? closestPoint1 : closestPoint2;
+			var p = (closestPoint1 + closestPoint2) / 2.0f;
+			float offset = Mathf.Abs(Vector3.Dot(furthestPoint - p, cameraDirection.normalized));
+			//var offset = Vector3.Dot(cameraDirection.normalized, closestPoint1 - closestPoint2) * cameraDirection.normalized;
+			
+
+			cameraTR.position = p - offset * cameraDirection.normalized;
+			
+			//cameraTR.position = Vector3.Dot( closestPoint1 - closestPoint2, cameraDirection ) < 0 ? closestPoint1 : closestPoint2;
 		}
 	}
 
@@ -448,6 +469,9 @@ public static class RuntimePreviewGenerator
 		Vector3 point = boundingBoxPoints[pointIndex];
 		for( int i = 0; i < boundingBoxPoints.Length; i++ )
 		{
+			if (i == pointIndex)
+				continue; 
+			
 			if( i != pointIndex && Vector3.Dot( direction, boundingBoxPoints[i] - point ) > 0 )
 				return false;
 		}
